@@ -1,38 +1,28 @@
-# V-CoT: Hierarchical Visual Chain-of-Thought for Sensorimotor Control
+# Resilient-Flow: Fault-Tolerant Robotic Control via Flow Matching and CfC
 
-This repository implements **V-CoT**, a hierarchical Vision-Language-Action (VLA) framework that bridges high-level semantic reasoning with low-level physical execution. By leveraging a Vision-Language Model (VLM) for visual subgoal generation and an Optimal Transport Flow Matching (OT-Flow) policy for precise visuomotor control, the system achieves robust closed-loop manipulation in complex environments.
+This repository implements **Resilient-Flow**, a novel hierarchical framework designed for **Fault-Tolerant Physical AI**. By combining the deterministic trajectory generation of Flow Matching (FM) with the ultra-fast, continuous-time dynamic adaptation of Closed-form Continuous-time Neural Networks (CfC), the system achieves robust sensorimotor control even under severe hardware failures and unexpected external perturbations.
 
 ## 1. Overview
 
-Traditional end-to-end VLA models often struggle with long-horizon tasks due to a lack of intermediate temporal reasoning. **V-CoT** addresses this by decomposing the control loop into two distinct hierarchies:
+Traditional Vision-Language-Action (VLA) models assume perfect hardware conditions, often leading to catastrophic failure when physical constraints change (e.g., joint locked, external impact). **Resilient-Flow** shifts the paradigm from "optimization for success" to "graceful degradation and survival" through a biologically inspired dual-loop architecture:
 
-* **High-Level Brain (VLM):** An `InstructPix2Pix` model fine-tuned via `LoRA` that generates a "Visual Chain-of-Thought"—predicting a visual subgoal (future state image) based on current observations and language instructions.
-* **Low-Level Cerebellum (Flow Matching):** A conditional UNet-based controller that solves the Probability Flow ODE to execute high-frequency action chunks.
-
-By transitioning from standard Diffusion to **Flow Matching**, the system achieves 10x faster inference and smoother trajectory generation via deterministic Euler integration.
-
----
+* **High-Level Brain (Flow Matching Policy):** Generates 16-step optimal kinematic trajectories based on visual observations and current physical health conditions.
+* **Low-Level Nerve (CfC Controller):** Translates kinematic intents into continuous torque commands, instantly adapting to dynamic changes and identifying structural faults in real-time.
 
 ## 2. Architecture and Data Flow
 
-The architecture follows a multi-rate control scheme:
+The architecture operates asynchronously to ensure both cognitive flexibility and physical stability:
 
-1. **Semantic Reasoning:** Every $N$ steps, the VLM generates a visual subgoal $\hat{s}_{subgoal}$ representing the state at $t+k$.
-2. **Visuomotor Execution:** The low-level policy consumes the current observation $s_t$ and the visual subgoal $\hat{s}_{subgoal}$ to predict an action trajectory.
-3. **Flow Matching Formulation:** The controller learns the velocity field $v_t$ that transports a Gaussian prior $x_0$ to the empirical action distribution $x_1$ following:
-
-$$dx_t = v_t(x_t, t) dt$$
-
-
-
----
+1. **Strategic Planning:** The Flow Matching policy solves the Probability Flow ODE to construct a 16-step spatial trajectory $x_{16}$ that routes around identified physical limitations.
+2. **Visuomotor Execution:** The CfC neural muscle smoothly interpolates and executes this trajectory by outputting high-frequency torque signals ($\tau$) that account for the robot's real-time mass, friction, and inertia.
+3. **Resilience Feedback Loop:** If the CfC detects an anomaly (via residual errors between predicted latent states and actual proprioception), it constructs a `Fault_Context` tensor. This tensor is asynchronously fed back to the FM, triggering immediate replanning or a "Safe Abort".
 
 ## 3. Key Features
 
-* **Optimal Transport Flow Matching (OT-Flow):** Replaces traditional diffusion schedulers with linear interpolation trajectories for faster convergence and more efficient inference.
-* **Visual Subgoal Conditioning:** Utilizes Classifier-Free Guidance (CFG) to align the robot's physical actions with the VLM's imagined future state.
-* **Multi-Task Robosuite Integration:** Pre-configured for `Lift`, `PickPlaceCan`, and `NutAssemblySquare` tasks using the Panda robot arm.
-* **LoRA Fine-tuning:** Efficient adaptation of high-level generative models to specific robotic domain datasets.
+* **OT-Flow for Trajectory Generation:** Fast, deterministic 16-step spatial path generation using Optimal Transport Flow Matching.
+* **Liquid Neural Muscle:** 1ms control loop via CfC (Liquid AI) for dynamic compliance and external force rejection.
+* **Self-Healing Replanning:** Real-time bottom-up feedback that explicitly conditions the high-level planner with localized fault diagnostics.
+* **Safe Abort Protocol:** Automatically evaluates the reachability of the workspace and transitions to an energy-minimizing neutral pose when the goal is physically impossible.
 
 ---
 
@@ -41,45 +31,42 @@ $$dx_t = v_t(x_t, t) dt$$
 Ensure you have a CUDA-capable GPU and Python 3.8+.
 
 ```bash
-git clone https://github.com/lloydkwak/V-CoT_Diffusion.git
-cd V-CoT_Diffusion
+git clone https://github.com/your_username/Resilient-Flow.git
+cd Resilient-Flow
 pip install -r requirements.txt
 
 ```
 
-*Dependencies include: PyTorch, Diffusers, PEFT, Robosuite, Hydra, and WandB.*
+**Key Dependencies:** `torch`, `torchcfm`, `ncps` (Neural Circuit Policies), `mujoco`, `robosuite`.
 
 ---
 
 ## 5. Pipeline Execution
 
-### A. Data Extraction
+### A. Data Engine (Fault-Injection Simulation)
 
-Generate paired data (observation, subgoal, action) for V-CoT training:
+Generate baseline trajectories and Oracle-guided fault recovery data using MPC:
 
 ```bash
-python3 scripts/extract_vlm_dataset.py
+python3 scripts/generate_fault_dataset.py --env mujoco_panda --fault_type joint_lock
 
 ```
 
-### B. High-Level VLM Training
+### B. High-Level Brain Training (Flow Matching)
 
-Fine-tune the subgoal generator using LoRA:
+Train the conditional vector field generator to plan routes based on visual and fault contexts:
 
 ```bash
-python3 scripts/train_vlm.py
+python3 scripts/train_fm_planner.py --config config/fm_planner.yaml
 
 ```
 
-### C. Low-Level Policy Training (Flow Matching)
+### C. Low-Level Nerve Training (CfC)
 
-Train the multitask visuomotor controller:
+Train the continuous-time torque controller via imitation learning:
 
 ```bash
-cd diffusion_policy
-python3 train.py --config-name=train_diffusion_unet_image_workspace \
-    task=multitask_image_vcot \
-    hydra.run.dir=/workspace/data/outputs/flow_matching_multitask
+python3 scripts/train_cfc_muscle.py --config config/cfc_torque.yaml
 
 ```
 
@@ -87,29 +74,23 @@ python3 train.py --config-name=train_diffusion_unet_image_workspace \
 
 ## 6. Evaluation
 
-### Independent Policy Testing (Teacher Forcing)
+### Nominal Evaluation
 
-To isolate the performance of the Flow Matching controller using ground-truth subgoals:
+Test the baseline performance without any hardware faults:
 
 ```bash
-python3 eval_lowlevel_policy.py
+python3 eval_nominal.py
 
 ```
 
-### Full System Deployment (Closed-Loop)
+### Fault-Tolerant Evaluation (Closed-Loop)
 
-To evaluate the integrated VLM-Brain and FM-Cerebellum:
+Inject real-time faults and evaluate the system's replanning and safe abort capabilities:
 
 ```bash
-python3 scripts/eval_system_pipeline.py
+python3 scripts/eval_resilience.py --inject_fault true --fault_timestep 50
 
 ```
-
----
-
-## 7. Results and Visualization
-
-Training and evaluation logs are integrated with **Weights & Biases (WandB)**. The evaluation scripts generate side-by-side videos of the live robot execution and the VLM's imagined subgoals to provide interpretability for the model's reasoning process.
 
 ---
 
@@ -118,13 +99,11 @@ Training and evaluation logs are integrated with **Weights & Biases (WandB)**. T
 If you use this framework in your research, please cite:
 
 ```bibtex
-@article{lloyd2026vcot,
-  title={V-CoT: Hierarchical Visual Chain-of-Thought for Sensorimotor Control via Flow Matching},
-  author={Kwak, Lloyd},
-  journal={GitHub Repository},
+@article{yourname2026resilientflow,
+  title={Resilient-Flow: Fault-Tolerant Robotic Control via Flow Matching and Continuous-time Neural Adaptation},
+  author={Your Name},
+  journal={In Preparation},
   year={2026}
 }
 
 ```
-
----
