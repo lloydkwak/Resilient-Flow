@@ -2,77 +2,44 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
 env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Jupyter Notebooks
-.ipynb_checkpoints
-
-# Virtual Environment & Secrets
 venv/
 .env
 .venv/
 conda_env/
-.netrc            
 
-# IDE settings
-.vscode/
-.idea/
-*.swp
-
-# Project Specific: Data & Large Files
+# Project Structure: Data (RESEARCH DATA IS LARGE)
 data/
-datasets/
-*.pkl
 *.h5
 *.hdf5
 *.zarr
 *.npz
-*.jsonl
+*.pkl
 
-# Project Specific: Experiments, Logs & ML Artifacts
-experiments/outputs/
-wandb/            
-artifacts/        
-runs/
-*.log
+# Project Structure: ML Artifacts (Weights & Logs)
+models/**/checkpoints/
 *.pth
 *.ckpt
 *.safetensors
 *.onnx
-.huggingface/
-
-# Ignore Hydra & WandB run directories
-run-*/
-diffusion_policy/run-*/
-tmp/
-temp/
-
-# Mac OS specific
-.DS_Store
-
-# Evaluation results and videos
+wandb/
+logs/
 outputs/
-diffusion_policy/outputs/
-eval_runner_logs/
-eval_videos/
-videos/
+.hydra/
+
+# Simulation & Evaluation Artifacts
 *.mp4
 *.avi
 *.gif
+eval/media/
+eval/eval_log.json
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Secrets
+.netrc
