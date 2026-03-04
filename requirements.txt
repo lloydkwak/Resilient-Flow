@@ -63,3 +63,5 @@ imageio[ffmpeg]
 opencv-python
 h5py
 numba
+ncps
+torchcfm
