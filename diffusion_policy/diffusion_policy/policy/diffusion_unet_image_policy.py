@@ -113,9 +113,10 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         model = self.model
         device = condition_data.device
         dtype = condition_data.dtype
+        batch_size = condition_data.shape[0]
 
         # Initial state x_0 ~ N(0, I)
-        trajectory = torch.randn(
+        x_t = torch.randn(
             size=condition_data.shape, 
             dtype=dtype,
             device=device,
@@ -130,22 +131,22 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
             # t ranges from 0.0 to 1.0 (approaching data distribution)
             t_val = i * dt
             # Scale t by 1000 to match the standard embedding frequencies of UNet
-            t_tensor = torch.full((trajectory.shape[0],), t_val * 1000, device=device, dtype=dtype)
+            t_tensor = torch.full((batch_size,), t_val * 1000.0, device=device, dtype=dtype)
 
             # Enforce observation constraints (Inpainting)
-            trajectory[condition_mask] = condition_data[condition_mask]
+            x_t[condition_mask] = condition_data[condition_mask]
 
             # Predict the vector field (velocity) v_t(x_t)
-            model_output = model(trajectory, t_tensor, local_cond=local_cond, global_cond=global_cond)
+            model_output = model(sample=x_t, timestep=t_tensor, local_cond=local_cond, global_cond=global_cond)
             v_pred = model_output.sample if hasattr(model_output, 'sample') else model_output
 
             # Euler integration step: x_{t+dt} = x_t + v * dt
-            trajectory = trajectory + v_pred * dt
+            x_t = x_t + v_pred * dt
         
         # Enforce exact boundary constraints at t=1
-        trajectory[condition_mask] = condition_data[condition_mask]        
+        x_t[condition_mask] = condition_data[condition_mask]        
 
-        return trajectory
+        return x_t
 
     def predict_action(self, obs_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
@@ -155,7 +156,7 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         
         nobs = self.normalizer.normalize(obs_dict)
         value = next(iter(nobs.values()))
-        B, To = value.shape[:2]
+        B = value.shape[0]
         T = self.horizon
         Da = self.action_dim
         Do = self.obs_feature_dim
@@ -167,6 +168,7 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         local_cond = None
         global_cond = None
         
+        # Observation encoding logic consistent with training
         if self.obs_as_global_cond:
             this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].reshape(-1,*x.shape[2:]))
             nobs_features = self.obs_encoder(this_nobs)
@@ -184,6 +186,7 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
             cond_data[:,:To,Da:] = nobs_features
             cond_mask[:,:To,Da:] = True
 
+        # Flow Matching ODE Solving
         nsample = self.conditional_sample(
             cond_data, 
             cond_mask,
@@ -194,6 +197,7 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         naction_pred = nsample[...,:Da]
         action_pred = self.normalizer['action'].unnormalize(naction_pred)
 
+        # Extraction of the action chunk
         start = To - 1
         end = start + self.n_action_steps
         action = action_pred[:,start:end]
@@ -263,7 +267,7 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         xt[condition_mask] = cond_data[condition_mask]
         
         # Scale t by 1000 for UNet temporal embeddings, consistent with diffusion models
-        t_scaled = t * 1000
+        t_scaled = t * 1000.0
         
         # Predict the vector field
         model_output = self.model(xt, t_scaled, local_cond=local_cond, global_cond=global_cond)

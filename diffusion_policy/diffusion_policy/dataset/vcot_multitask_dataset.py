@@ -44,7 +44,7 @@ class VCoTMultitaskDataset(BaseImageDataset):
         
         # Visual augmentation pipeline for current observations
         self.augmentor = T.Compose([
-            T.RandomCrop((80, 120)), 
+            T.RandomCrop((76, 76)), 
             T.Resize((84, 128)),     
             T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.1),
         ])
