@@ -1,109 +1,37 @@
-# Resilient-Flow: Fault-Tolerant Robotic Control via Flow Matching and CfC
+# DIRCA-S: Dynamical Intermediate Representation Control Architecture with Safe-Stop
 
-This repository implements **Resilient-Flow**, a novel hierarchical framework designed for **Fault-Tolerant Physical AI**. By combining the deterministic trajectory generation of Flow Matching (FM) with the ultra-fast, continuous-time dynamic adaptation of Closed-form Continuous-time Neural Networks (CfC), the system achieves robust sensorimotor control even under severe hardware failures and unexpected external perturbations.
+This repository implements **DIRCA-S**, a novel decoupled hierarchical framework designed for **Fault-Tolerant Physical AI**. By drawing inspiration from the LLVM compiler paradigm, the system completely decouples task-space kinematic intent from joint-space physical execution. This ensures robust sensorimotor control, hardware agnosticism, and graceful degradation even under severe morphological failures (e.g., locked joints, actuator loss).
 
 ## 1. Overview
 
-Traditional Vision-Language-Action (VLA) models assume perfect hardware conditions, often leading to catastrophic failure when physical constraints change (e.g., joint locked, external impact). **Resilient-Flow** shifts the paradigm from "optimization for success" to "graceful degradation and survival" through a biologically inspired dual-loop architecture:
+Traditional Vision-Language-Action (VLA) models attempt to map visual inputs directly to joint-space actions, leading to catastrophic out-of-distribution (OOD) failures when the robot's physical constraints change. **DIRCA-S** solves this by establishing an abstraction layer:
 
-* **High-Level Brain (Flow Matching Policy):** Generates 16-step optimal kinematic trajectories based on visual observations and current physical health conditions.
-* **Low-Level Nerve (CfC Controller):** Translates kinematic intents into continuous torque commands, instantly adapting to dynamic changes and identifying structural faults in real-time.
+* **Front-End (Flow Matching Planner):** Generates morphology-agnostic, task-space $SE(3)$ vector fields (the "Intermediate Representation" or IR) based on visual observations. It is completely blind to the robot's hardware state.
+* **Back-End (Whole-Body Compiler):** A classical Operational Space Controller (OSC) that runs at 1kHz. It receives the task-space IR and compiles it into optimal joint torques ($\tau$) by exploiting the robot's kinematic redundancy via Jacobian null-space projection.
+* **Safety Layer (Passive Dissipator):** A mathematically grounded Safe-Stop mechanism that monitors the manipulability ellipsoid ($\det(JJ^T)$). If an unreachable singularity is detected due to severe fault, it safely dissipates the system's kinetic energy using a Control Lyapunov Function (CLF), preventing physical blow-ups.
 
 ## 2. Architecture and Data Flow
 
 The architecture operates asynchronously to ensure both cognitive flexibility and physical stability:
 
-1. **Strategic Planning:** The Flow Matching policy solves the Probability Flow ODE to construct a 16-step spatial trajectory $x_{16}$ that routes around identified physical limitations.
-2. **Visuomotor Execution:** The CfC neural muscle smoothly interpolates and executes this trajectory by outputting high-frequency torque signals ($\tau$) that account for the robot's real-time mass, friction, and inertia.
-3. **Resilience Feedback Loop:** If the CfC detects an anomaly (via residual errors between predicted latent states and actual proprioception), it constructs a `Fault_Context` tensor. This tensor is asynchronously fed back to the FM, triggering immediate replanning or a "Safe Abort".
+1. **Global Planning (20Hz):** The Flow Matching policy constructs an optimal transport spatial flow ($\dot{x}_{IR}$) based on visual context, without concerning itself with the robot's physical health.
+2. **Fault Monitoring (1kHz):** A momentum-based observer continuously monitors sensor residuals to dynamically update the fault mask ($m_{fault}$).
+3. **Local Execution & Safe Abort (1kHz):** - **Nominal/Recoverable:** The controller actively projects the task into the null-space of the broken joints, calculating torques using only the surviving actuators.
+   - **Infeasible/Singularity:** If the target flow is unreachable, the system triggers the **Safe-Stop** protocol, transitioning to a highly damped state ($\tau = -B\dot{q}$) to absorb external impacts.
 
 ## 3. Key Features
 
-* **OT-Flow for Trajectory Generation:** Fast, deterministic 16-step spatial path generation using Optimal Transport Flow Matching.
-* **Liquid Neural Muscle:** 1ms control loop via CfC (Liquid AI) for dynamic compliance and external force rejection.
-* **Self-Healing Replanning:** Real-time bottom-up feedback that explicitly conditions the high-level planner with localized fault diagnostics.
-* **Safe Abort Protocol:** Automatically evaluates the reachability of the workspace and transitions to an energy-minimizing neutral pose when the goal is physically impossible.
+* **Morphology Agnosticism:** The Front-End generates pure $SE(3)$ task flows, enabling zero-shot cross-embodiment transfer.
+* **Extreme Resilience:** Decoupled Back-End ensures 1ms response to joint failures without waiting for the heavy vision model to replan.
+* **Provable Safety:** Lyapunov-based energy dissipation guarantees the system will not diverge or oscillate when confronted with kinematically impossible commands.
 
 ---
 
 ## 4. Installation
 
-Ensure you have a CUDA-capable GPU and Python 3.8+.
+Ensure you have a CUDA-capable GPU, Python 3.10+, and Docker installed (recommended).
 
 ```bash
-git clone https://github.com/your_username/Resilient-Flow.git
+git clone [https://github.com/your_username/Resilient-Flow.git](https://github.com/your_username/Resilient-Flow.git)
 cd Resilient-Flow
 pip install -r requirements.txt
-
-```
-
-**Key Dependencies:** `torch`, `torchcfm`, `ncps` (Neural Circuit Policies), `mujoco`, `robosuite`.
-
----
-
-## 5. Pipeline Execution
-
-### A. Data Engine (Fault-Injection Simulation)
-
-Generate baseline trajectories and Oracle-guided fault recovery data using MPC:
-
-```bash
-python3 scripts/generate_fault_dataset.py --env mujoco_panda --fault_type joint_lock
-
-```
-
-### B. High-Level Brain Training (Flow Matching)
-
-Train the conditional vector field generator to plan routes based on visual and fault contexts:
-
-```bash
-python3 scripts/train_fm_planner.py --config config/fm_planner.yaml
-
-```
-
-### C. Low-Level Nerve Training (CfC)
-
-Train the continuous-time torque controller via imitation learning:
-
-```bash
-python3 scripts/train_cfc_muscle.py --config config/cfc_torque.yaml
-
-```
-
----
-
-## 6. Evaluation
-
-### Nominal Evaluation
-
-Test the baseline performance without any hardware faults:
-
-```bash
-python3 eval_nominal.py
-
-```
-
-### Fault-Tolerant Evaluation (Closed-Loop)
-
-Inject real-time faults and evaluate the system's replanning and safe abort capabilities:
-
-```bash
-python3 scripts/eval_resilience.py --inject_fault true --fault_timestep 50
-
-```
-
----
-
-## Citation
-
-If you use this framework in your research, please cite:
-
-```bibtex
-@article{yourname2026resilientflow,
-  title={Resilient-Flow: Fault-Tolerant Robotic Control via Flow Matching and Continuous-time Neural Adaptation},
-  author={Your Name},
-  journal={In Preparation},
-  year={2026}
-}
-
-```
